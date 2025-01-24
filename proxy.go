@@ -22,11 +22,16 @@ import (
 
 const (
 	deepseekEndpoint  = "https://api.deepseek.com"
+	openaiEndpoint    = "https://api.openai.com"
 	deepseekChatModel = "deepseek-chat"
 	gpt4oModel        = "gpt-4o"
+	gpt4oMiniModel    = "gpt-4o-mini"
 )
 
-var deepseekAPIKey string
+var (
+	deepseekAPIKey string
+	openaiAPIKey   string
+)
 
 func init() {
 	// Load .env file
@@ -38,6 +43,12 @@ func init() {
 	deepseekAPIKey = os.Getenv("DEEPSEEK_API_KEY")
 	if deepseekAPIKey == "" {
 		log.Fatal("DEEPSEEK_API_KEY environment variable is required")
+	}
+
+	// Get OpenAI API key
+	openaiAPIKey = os.Getenv("OPENAI_API_KEY")
+	if openaiAPIKey == "" {
+		log.Fatal("OPENAI_API_KEY environment variable is required")
 	}
 }
 
@@ -282,19 +293,30 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Requested model: %s", chatReq.Model)
 
-	// Replace gpt-4o model with deepseek-chat
-	if chatReq.Model == gpt4oModel {
+	var targetEndpoint string
+	var targetAPIKey string
+
+	// Route request based on model
+	switch chatReq.Model {
+	case gpt4oModel:
+		targetEndpoint = deepseekEndpoint
+		targetAPIKey = deepseekAPIKey
 		chatReq.Model = deepseekChatModel
 		log.Printf("Model converted to: %s", deepseekChatModel)
-	} else {
+	case gpt4oMiniModel:
+		targetEndpoint = openaiEndpoint
+		targetAPIKey = openaiAPIKey
+		chatReq.Model = "gpt-4o-mini"
+		log.Printf("Model converted to: gpt-4o-mini")
+	default:
 		log.Printf("Unsupported model requested: %s", chatReq.Model)
-		http.Error(w, fmt.Sprintf("Model %s not supported. Use %s instead.", chatReq.Model, gpt4oModel), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("Model %s not supported. Use %s or %s instead.", chatReq.Model, gpt4oModel, gpt4oMiniModel), http.StatusBadRequest)
 		return
 	}
 
 	// Convert to DeepSeek request format
 	deepseekReq := DeepSeekRequest{
-		Model:    deepseekChatModel,
+		Model:    chatReq.Model,
 		Messages: convertMessages(chatReq.Messages),
 		Stream:   chatReq.Stream,
 	}
@@ -341,7 +363,7 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Modified request body: %s", string(modifiedBody))
 
 	// Create the proxy request to DeepSeek
-	targetURL := deepseekEndpoint + r.URL.Path
+	targetURL := targetEndpoint + r.URL.Path
 	if r.URL.RawQuery != "" {
 		targetURL += "?" + r.URL.RawQuery
 	}
@@ -357,8 +379,8 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	// Copy headers
 	copyHeaders(proxyReq.Header, r.Header)
 
-	// Set DeepSeek API key and content type
-	proxyReq.Header.Set("Authorization", "Bearer "+deepseekAPIKey)
+	// Set API key and content type based on target endpoint
+	proxyReq.Header.Set("Authorization", "Bearer "+targetAPIKey)
 	proxyReq.Header.Set("Content-Type", "application/json")
 	if chatReq.Stream {
 		proxyReq.Header.Set("Accept", "text/event-stream")
