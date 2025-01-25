@@ -1,0 +1,12 @@
+{
+  "apps": [
+    {
+      "name": "proxy",
+      "script": "./proxy.go"
+    },
+    {
+      "name": "proxyopenrouter",
+      "script": "./proxy-openrouter.go"
+    }
+  ]
+}
